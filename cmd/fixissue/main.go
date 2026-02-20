@@ -25,10 +25,12 @@ func main() {
 
 	issueURL := fmt.Sprintf("https://github.com/%s/issues/%s", repo, issueID)
 
-	// Create and switch to the new branch.
+	// Create and switch to the branch (use existing if it already exists).
 	if err := run("git", "checkout", "-b", branch); err != nil {
-		fmt.Fprintf(os.Stderr, "failed to create branch: %v\n", err)
-		os.Exit(1)
+		if err := run("git", "checkout", branch); err != nil {
+			fmt.Fprintf(os.Stderr, "failed to switch to branch: %v\n", err)
+			os.Exit(1)
+		}
 	}
 
 	// Run claude to fix the issue.
