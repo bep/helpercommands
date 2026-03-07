@@ -34,7 +34,7 @@ func main() {
 	}
 
 	// Run claude to fix the issue.
-	prompt := fmt.Sprintf(`Fix the issue described in %s.
+	prompt := fmt.Sprintf(`Use gh to view the issue described in %s.
 
 * If there is a test case provided in the issue, use that. Else create a failing test case (or adjust an existing one) that demonstrates the issue. 
 * Run the test a and make sure it fails.
