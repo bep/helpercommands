@@ -1,13 +1,19 @@
 package main
 
 import (
+	"context"
 	"fmt"
 	"os"
 	"os/exec"
+	"os/signal"
 	"strings"
+	"syscall"
 )
 
 func main() {
+	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
+	defer stop()
+
 	if len(os.Args) < 2 {
 		fmt.Fprintln(os.Stderr, "usage: fixissue <issue-id>")
 		os.Exit(1)
@@ -26,8 +32,8 @@ func main() {
 	issueURL := fmt.Sprintf("https://github.com/%s/issues/%s", repo, issueID)
 
 	// Create and switch to the branch (use existing if it already exists).
-	if err := run("git", "checkout", "-b", branch); err != nil {
-		if err := run("git", "checkout", branch); err != nil {
+	if err := run(ctx, "git", "checkout", "-b", branch); err != nil {
+		if err := run(ctx, "git", "checkout", branch); err != nil {
 			fmt.Fprintf(os.Stderr, "failed to switch to branch: %v\n", err)
 			os.Exit(1)
 		}
@@ -36,13 +42,17 @@ func main() {
 	// Run claude to fix the issue.
 	prompt := fmt.Sprintf(`Use gh to view the issue described in %s.
 
-* If there is a test case provided in the issue, use that. Else create a failing test case (or adjust an existing one) that demonstrates the issue. 
+* If there is a test case provided in the issue, use that. Else create a failing test case (or adjust an existing one) that demonstrates the issue.
 * Run the test a and make sure it fails.
 * Then fix the code to make the test pass.
 * Commit the changes.`, issueURL)
 	// This allows that Claude has all the needed permissions to read the code and commit the changes.
 	// We could use --dangerously-skip-permissions but that would be less secure.
-	if err := run("claude", "-p", prompt); err != nil {
+	if err := run(ctx, "claude", "-p", prompt); err != nil {
+		if ctx.Err() != nil {
+			fmt.Fprintln(os.Stderr, "interrupted")
+			os.Exit(130)
+		}
 		fmt.Fprintf(os.Stderr, "claude failed: %v\n", err)
 		os.Exit(1)
 	}
@@ -71,7 +81,7 @@ func shellQuote(s string) string {
 	return "'" + strings.ReplaceAll(s, "'", "'\\''") + "'"
 }
 
-func run(name string, args ...string) error {
+func run(ctx context.Context, name string, args ...string) error {
 	parts := make([]string, 0, len(args)+1)
 	parts = append(parts, name)
 	for _, a := range args {
@@ -79,9 +89,14 @@ func run(name string, args ...string) error {
 	}
 	cmdStr := strings.Join(parts, " ")
 
-	cmd := exec.Command(shell(), "-ic", cmdStr)
+	cmd := exec.CommandContext(ctx, shell(), "-ic", cmdStr)
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
 	cmd.Stdin = os.Stdin
+	// Send signal to the child process group so all descendants are terminated.
+	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true, Foreground: true, Ctty: int(os.Stdin.Fd())}
+	cmd.Cancel = func() error {
+		return syscall.Kill(-cmd.Process.Pid, syscall.SIGTERM)
+	}
 	return cmd.Run()
 }
