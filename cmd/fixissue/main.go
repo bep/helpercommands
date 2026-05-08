@@ -45,7 +45,7 @@ func main() {
 * If there is a test case provided in the issue, use that. Else create a failing test case (or adjust an existing one) that demonstrates the issue.
 * Run the test a and make sure it fails.
 * Then fix the code to make the test pass.
-* Commit the changes.`, issueURL)
+* Commit the changes with a brief and suitable message.`, issueURL)
 	// This allows that Claude has all the needed permissions to read the code and commit the changes.
 	// We could use --dangerously-skip-permissions but that would be less secure.
 	if err := run(ctx, "claude", "-p", prompt); err != nil {
